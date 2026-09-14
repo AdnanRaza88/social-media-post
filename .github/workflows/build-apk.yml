@@ -1,0 +1,54 @@
+name: Build APK
+
+on:
+  workflow_dispatch:
+    inputs:
+      server_url:
+        description: "HTTPS URL the APK should load (your deployed Relay app)"
+        required: true
+        type: string
+  push:
+    paths:
+      - "capacitor.config.ts"
+      - ".github/workflows/build-apk.yml"
+      - "native/**"
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: android-actions/setup-android@v3
+      - name: Install Capacitor
+        run: |
+          npm install --no-save @capacitor/core @capacitor/cli @capacitor/android
+          npx cap init Relay app.relay.node --web-dir public || true
+      - name: Point WebView at deployed Relay
+        env:
+          SERVER_URL: ${{ github.event.inputs.server_url || vars.RELAY_SERVER_URL }}
+        run: |
+          test -n "$SERVER_URL"
+          cat > capacitor.config.json <<EOF
+          {
+            "appId": "app.relay.node",
+            "appName": "Relay",
+            "webDir": "public",
+            "server": { "url": "${SERVER_URL}", "cleartext": false }
+          }
+          EOF
+      - name: Add Android platform and build debug APK
+        run: |
+          npx cap add android || true
+          npx cap sync android
+          cd android && ./gradlew assembleDebug
+      - uses: actions/upload-artifact@v4
+        with:
+          name: relay-debug-apk
+          path: android/app/build/outputs/apk/debug/*.apk
